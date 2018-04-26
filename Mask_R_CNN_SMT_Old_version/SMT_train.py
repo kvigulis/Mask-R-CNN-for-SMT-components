@@ -84,7 +84,7 @@ class ShapesConfig(Config):
     # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes
     # weights to explode. Likely due to differences in optimzer
     # implementation.
-    LEARNING_RATE = 0.001
+    LEARNING_RATE = 0.0008
     LEARNING_MOMENTUM = 0.9
     
     # Train or freeze batch normalization layers
@@ -94,10 +94,10 @@ class ShapesConfig(Config):
     TRAIN_BN = None  # Defaulting to False since batch size is often small
     
     # Use a small epoch since the data is simple
-    STEPS_PER_EPOCH = 200
+    STEPS_PER_EPOCH = 100
 
     # use small validation steps since the epoch is small
-    VALIDATION_STEPS = 60
+    VALIDATION_STEPS = 30
 
 config = ShapesConfig()
 
@@ -256,22 +256,18 @@ class SMTDataset(utils.Dataset):
 
 
 #Load the datasets
-IMAGE_DIR = os.path.join(ROOT_DIR, "modified_data_7k/output_images")
-LBL_DIR = os.path.join(ROOT_DIR, "modified_data_7k/output_labels")
+TRAIN_DIR = os.path.join(ROOT_DIR, "train7360/images")
+TRAIN_LBL_DIR = os.path.join(ROOT_DIR, "train7360/labels")
+
+VAL_DIR = os.path.join(ROOT_DIR, "val7360/images")
+VAL_LBL_DIR = os.path.join(ROOT_DIR, "val7360/labels")
 
 
-# IMAGE_DIR = os.path.join(ROOT_DIR, "images")
-# LBL_DIR = os.path.join(ROOT_DIR, "smt_labels")
-VAL_DIR = os.path.join(ROOT_DIR, "validation_data/images")
-VAL_LBL_DIR = os.path.join(ROOT_DIR, "validation_data/labels")
-
-TEST_DIR = os.path.join(ROOT_DIR, "test_data/images")
-TEST_LBL_DIR = os.path.join(ROOT_DIR, "test_data/labels")
 
 
 # Training dataset
 dataset_train = SMTDataset()
-dataset_train.load_shapes(IMAGE_DIR, LBL_DIR)
+dataset_train.load_shapes(TRAIN_DIR, TRAIN_LBL_DIR)
 dataset_train.prepare()
 
 
@@ -281,10 +277,7 @@ dataset_val.load_shapes(VAL_DIR, VAL_LBL_DIR)
 dataset_val.prepare()
 
 
-# Test dataset
-#dataset_test = SMTDataset()
-#dataset_test.load_shapes(TEST_DIR, TEST_LBL_DIR)
-#dataset_test.prepare()
+
 
 
 
@@ -319,5 +312,5 @@ elif init_with == "last":
 
 model.train(dataset_train, dataset_train, 
             learning_rate=config.LEARNING_RATE, 
-            epochs=25,    
+            epochs=67,    
             layers='heads')
