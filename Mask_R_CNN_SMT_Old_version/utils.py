@@ -87,6 +87,29 @@ def compute_overlaps(boxes1, boxes2):
         overlaps[:, i] = compute_iou(box2, boxes1, area2[i], area1)
     return overlaps
 
+def compute_overlaps_masks(masks1, masks2):
+    '''Computes IoU overlaps between two sets of masks.
+    masks1, masks2: [Height, Width, instances]
+    '''
+    print('pred masks:', masks1)
+    print('GT masks:', masks2)
+    # flatten masks
+    masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
+    if masks2.size < 1:
+	# if ground truth has no masks create array of zeros coresponding to shape of predicted masks (masks1)
+        mask2 = np.zeros(mask1.shape)
+    else:
+        masks2 = np.reshape(masks2 > .5, (-1, masks2.shape[-1])).astype(np.float32)
+    area1 = np.sum(masks1, axis=0)
+    area2 = np.sum(masks2, axis=0)
+
+    # intersections and union
+    intersections = np.dot(masks1.T, masks2)
+    union = area1[:, None] + area2[None, :] - intersections
+    overlaps = intersections / union
+
+    return overlaps
+
 
 def non_max_suppression(boxes, scores, threshold):
     """Performs non-maximum supression and returns indicies of kept boxes.
@@ -559,41 +582,49 @@ def trim_zeros(x):
     assert len(x.shape) == 2
     return x[~np.all(x == 0, axis=1)]
 
-
-def compute_ap(gt_boxes, gt_class_ids,
-               pred_boxes, pred_class_ids, pred_scores,
-               iou_threshold=0.5):
-    """Compute Average Precision at a set IoU threshold (default 0.5).
-
+def compute_matches(gt_boxes, gt_class_ids, gt_masks,
+                    pred_boxes, pred_class_ids, pred_scores, pred_masks,
+                    iou_threshold=0.5, score_threshold=0.0):
+    """Finds matches between prediction and ground truth instances.
     Returns:
-    mAP: Mean Average Precision
-    precisions: List of precisions at different class score thresholds.
-    recalls: List of recall values at different class score thresholds.
-    overlaps: [pred_boxes, gt_boxes] IoU overlaps.
+        gt_match: 1-D array. For each GT box it has the index of the matched
+                  predicted box.
+        pred_match: 1-D array. For each predicted box, it has the index of
+                    the matched ground truth box.
+        overlaps: [pred_boxes, gt_boxes] IoU overlaps.
     """
-    # Trim zero padding and sort predictions by score from high to low
+    # Trim zero padding
     # TODO: cleaner to do zero unpadding upstream
     gt_boxes = trim_zeros(gt_boxes)
+    gt_masks = gt_masks[..., :gt_boxes.shape[0]]
     pred_boxes = trim_zeros(pred_boxes)
     pred_scores = pred_scores[:pred_boxes.shape[0]]
+    # Sort predictions by score from high to low
     indices = np.argsort(pred_scores)[::-1]
     pred_boxes = pred_boxes[indices]
     pred_class_ids = pred_class_ids[indices]
     pred_scores = pred_scores[indices]
+    pred_masks = pred_masks[..., indices]
 
-    # Compute IoU overlaps [pred_boxes, gt_boxes]
-    overlaps = compute_overlaps(pred_boxes, gt_boxes)
+    # Compute IoU overlaps [pred_masks, gt_masks]
+    overlaps = compute_overlaps_masks(pred_masks, gt_masks)
 
-    # Loop through ground truth boxes and find matching predictions
+    # Loop through predictions and find matching ground truth boxes
     match_count = 0
-    pred_match = np.zeros([pred_boxes.shape[0]])
-    gt_match = np.zeros([gt_boxes.shape[0]])
+    pred_match = -1 * np.ones([pred_boxes.shape[0]])
+    gt_match = -1 * np.ones([gt_boxes.shape[0]])
     for i in range(len(pred_boxes)):
         # Find best matching ground truth box
+        # 1. Sort matches by score
         sorted_ixs = np.argsort(overlaps[i])[::-1]
+        # 2. Remove low scores
+        low_score_idx = np.where(overlaps[i, sorted_ixs] < score_threshold)[0]
+        if low_score_idx.size > 0:
+            sorted_ixs = sorted_ixs[:low_score_idx[0]]
+        # 3. Find the match
         for j in sorted_ixs:
             # If ground truth box is already matched, go to next one
-            if gt_match[j] == 1:
+            if gt_match[j] > 0:
                 continue
             # If we reach IoU smaller than the threshold, end the loop
             iou = overlaps[i, j]
@@ -602,13 +633,31 @@ def compute_ap(gt_boxes, gt_class_ids,
             # Do we have a match?
             if pred_class_ids[i] == gt_class_ids[j]:
                 match_count += 1
-                gt_match[j] = 1
-                pred_match[i] = 1
+                gt_match[j] = i
+                pred_match[i] = j
                 break
 
+    return gt_match, pred_match, overlaps
+
+def compute_ap(gt_boxes, gt_class_ids, gt_masks,
+               pred_boxes, pred_class_ids, pred_scores, pred_masks,
+               iou_threshold=0.5):
+    """Compute Average Precision at a set IoU threshold (default 0.5).
+    Returns:
+    mAP: Mean Average Precision
+    precisions: List of precisions at different class score thresholds.
+    recalls: List of recall values at different class score thresholds.
+    overlaps: [pred_boxes, gt_boxes] IoU overlaps.
+    """
+    # Get matches and overlaps
+    gt_match, pred_match, overlaps = compute_matches(
+        gt_boxes, gt_class_ids, gt_masks,
+        pred_boxes, pred_class_ids, pred_scores, pred_masks,
+        iou_threshold)
+
     # Compute precision and recall at each prediction box step
-    precisions = np.cumsum(pred_match) / (np.arange(len(pred_match)) + 1)
-    recalls = np.cumsum(pred_match).astype(np.float32) / len(gt_match)
+    precisions = np.cumsum(pred_match > -1) / (np.arange(len(pred_match)) + 1)
+    recalls = np.cumsum(pred_match > -1).astype(np.float32) / len(gt_match)
 
     # Pad with start and end values to simplify the math
     precisions = np.concatenate([[0], precisions, [0]])
