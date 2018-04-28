@@ -91,15 +91,24 @@ def compute_overlaps_masks(masks1, masks2):
     '''Computes IoU overlaps between two sets of masks.
     masks1, masks2: [Height, Width, instances]
     '''
-    print('pred masks:', masks1)
-    print('GT masks:', masks2)
     # flatten masks
-    masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
+    if masks1.size < 1:
+        masks1 = np.zeros(masks2.shape)
+    try:
+        masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
+    except:
+        overlaps = []
+        return overlaps
     if masks2.size < 1:
-	# if ground truth has no masks create array of zeros coresponding to shape of predicted masks (masks1)
+    # if ground truth has no masks create array of zeros coresponding to shape of predicted masks (masks1)
         masks2 = np.zeros(masks1.shape)
-    else:
+    try:
         masks2 = np.reshape(masks2 > .5, (-1, masks2.shape[-1])).astype(np.float32)
+    except:
+        overlaps = []
+        return overlaps
+
+
     area1 = np.sum(masks1, axis=0)
     area2 = np.sum(masks2, axis=0)
 
@@ -613,6 +622,10 @@ def compute_matches(gt_boxes, gt_class_ids, gt_masks,
     match_count = 0
     pred_match = -1 * np.ones([pred_boxes.shape[0]])
     gt_match = -1 * np.ones([gt_boxes.shape[0]])
+    # take care for the case where there are no ground truth instances.
+    if len(gt_match) < 1:
+        gt_match = [-1 for _ in range(len(pred_match))]
+        gt_class_ids = [-1 for _ in range(len(pred_match))]
     for i in range(len(pred_boxes)):
         # Find best matching ground truth box
         # 1. Sort matches by score
