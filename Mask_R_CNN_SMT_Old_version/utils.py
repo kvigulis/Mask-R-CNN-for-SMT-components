@@ -97,7 +97,7 @@ def compute_overlaps_masks(masks1, masks2):
     masks1 = np.reshape(masks1 > .5, (-1, masks1.shape[-1])).astype(np.float32)
     if masks2.size < 1:
 	# if ground truth has no masks create array of zeros coresponding to shape of predicted masks (masks1)
-        mask2 = np.zeros(mask1.shape)
+        masks2 = np.zeros(masks1.shape)
     else:
         masks2 = np.reshape(masks2 > .5, (-1, masks2.shape[-1])).astype(np.float32)
     area1 = np.sum(masks1, axis=0)
